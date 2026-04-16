@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-bg: #0A0A0B;
+  --color-brand-sidebar: #111112;
+  --color-brand-card: #161618;
+  --color-brand-border: #222222;
+  --color-brand-accent: #10B981;
+  --color-brand-blue: #3B82F6;
+  --color-brand-muted: #888888;
+  --color-brand-subtle: #666666;
+  
+  --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "Courier New", monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-brand-bg text-[#E0E0E0] font-sans antialiased;
+  }
+}
+
+.status-badge {
+  @apply bg-[rgba(16,185,129,0.1)] border border-brand-accent text-brand-accent px-3 py-1 rounded-full text-[10px] uppercase font-bold tracking-wider;
+}
+
+.security-pill {
+  @apply text-[10px] text-brand-muted border border-[#333] px-2 py-0.5 rounded;
+}
+
+.method-badge {
+  @apply font-bold text-[10px] px-1.5 py-0.5 rounded inline-block;
+}
+
+.method-post {
+  @apply bg-[rgba(59,130,246,0.2)] text-brand-blue;
+}
+
+.method-get {
+  @apply bg-[rgba(16,185,129,0.2)] text-brand-accent;
+}
+
+.code-box {
+  @apply bg-black p-4 rounded-sm font-mono text-[13px] leading-relaxed text-[#A9B7C6] border-l-3 border-brand-accent overflow-auto;
+}
+
