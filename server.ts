@@ -1,7 +1,6 @@
 /**
- * Production-ready Full-Stack Backend API System
- * Designed for stability, security, and zero CORS errors.
- * Optimized for Railway (Express) and Roblox game:HttpGet.
+ * 🛡️ SHIELD_API.ts - PURE BACKEND API
+ * Production-ready, zero CORS issues, Railway optimized.
  */
 
 import express, { Request, Response, NextFunction } from 'express';
@@ -9,164 +8,126 @@ import cors from 'cors';
 import { nanoid } from 'nanoid';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
-// Load environment variables
 dotenv.config();
 
-// Derive __dirname in ESM
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const app = express();
+const PORT = Number(process.env.PORT) || 3000;
 
 // --- IN-MEMORY STORAGE ---
 const scriptStorage = new Map<string, string>();
 const usedNonces = new Set<string>();
 
-async function startServer() {
-  const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+// --- 1️⃣ OPTIONS / PREFLIGHT (CRITICAL FIX) ---
+// Handle OPTIONS secara manual di paling atas untuk bypass semua middleware lain
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.sendStatus(204);
+});
 
-  // --- SECURITY HELPERS ---
+// --- 2️⃣ MIDDLEWARE ---
+app.use(cors({
+  origin: '*', 
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 
-  // Block tools like curl, postman, etc.
-  const userAgentFilter = (req: Request, res: Response, next: NextFunction) => {
-    const ua = req.get('User-Agent') || '';
-    const blockedUAs = ['curl', 'postman', 'insomnia', 'python-requests'];
+app.use(express.json());
+
+// User-Agent Filter (Anti-curl/Anti-postman)
+app.use((req, res, next) => {
+  const ua = req.get('User-Agent') || '';
+  const blocked = ['curl', 'postman', 'insomnia', 'python-requests'];
+  if (blocked.some(b => ua.toLowerCase().includes(b))) {
+    return res.status(200).send('-- ShieldAPI: Environment Restricted');
+  }
+  next();
+});
+
+// Rate Limiting (30 req/min)
+app.use(rateLimit({
+  windowMs: 60000,
+  max: 30,
+  message: { error: 'Quota exceeded' }
+}));
+
+// Request Logger
+app.use((req, res, next) => {
+  console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.path}`);
+  next();
+});
+
+// --- 3️⃣ API ROUTES ---
+
+// Root Status
+app.get('/', (req, res) => {
+  res.send('🛡️ SHIELD_API ONLINE | DEPLOYMENT ACTIVE');
+});
+
+// API Health
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'stable', uptime: process.uptime() });
+});
+
+// Create Script
+app.post('/api/create-script', (req: Request, res: Response) => {
+  try {
+    const { code } = req.body;
+    if (!code || typeof code !== 'string') return res.status(400).json({ error: 'Code required' });
     
-    if (blockedUAs.some(blocked => ua.toLowerCase().includes(blocked))) {
-      return res.status(200).send('-- Access Denied: Unauthorized Environment');
-    }
-    next();
-  };
+    const id = nanoid(12);
+    scriptStorage.set(id, code);
+    
+    const host = req.get('host');
+    const protocol = req.headers['x-forwarded-proto'] || 'http';
+    const loaderUrl = `${protocol}://${host}/loader?id=${id}`;
+    
+    res.json({ id, loaderUrl });
+  } catch (err) {
+    res.status(500).json({ error: 'Fault' });
+  }
+});
 
-  // Rate limiting
-  const limiter = rateLimit({
-    windowMs: 1 * 60 * 1000,
-    max: 30,
-    message: { error: 'Too many requests, please try again later.' },
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
+// Loader (Lua Plain Text)
+app.get('/loader', (req: Request, res: Response) => {
+  const { id, ts, nonce } = req.query;
+  if (!id || typeof id !== 'string') return res.send('-- Error: ID required');
 
-  // --- MIDDLEWARE ---
-
-  app.use(limiter);
-  app.use(userAgentFilter);
-  app.use(express.json());
-
-  // CORS Configuration
-  app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    preflightContinue: false,
-    optionsSuccessStatus: 204
-  }));
-
-  // Logger
-  app.use((req, res, next) => {
-    if (!req.path.startsWith('/@') && !req.path.includes('.')) {
-      console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-    }
-    next();
-  });
-
-  // --- API ROUTES ---
-
-  app.post('/api/create-script', (req: Request, res: Response) => {
-    try {
-      const { code } = req.body;
-      if (!code || typeof code !== 'string' || code.length === 0) {
-        return res.status(400).json({ error: 'Invalid script content' });
-      }
-      if (code.length > 50000) {
-        return res.status(400).json({ error: 'Script too large (max 50KB)' });
-      }
-      const id = nanoid(12);
-      scriptStorage.set(id, code);
-      const host = req.get('host');
-      const protocol = req.headers['x-forwarded-proto'] || 'http';
-      const loaderUrl = `${protocol}://${host}/loader?id=${id}`;
-      return res.json({ id, loaderUrl });
-    } catch (err) {
-      console.error('Create script error:', err);
-      return res.status(500).json({ error: 'Internal server error' });
-    }
-  });
-
-  app.get('/loader', (req: Request, res: Response) => {
-    try {
-      const { id, ts, nonce } = req.query;
-      if (!id || typeof id !== 'string') {
-        return res.status(200).send('-- Error: Missing ID');
-      }
-      if (ts && nonce && typeof ts === 'string' && typeof nonce === 'string') {
-        const timestamp = parseInt(ts);
-        const now = Math.floor(Date.now() / 1000);
-        if (Math.abs(now - timestamp) > 10) {
-          return res.status(200).send('-- Error: Request Expired');
-        }
-        if (usedNonces.has(nonce)) {
-          return res.status(200).send('-- Error: Request Replayed');
-        }
-        usedNonces.add(nonce);
-        setTimeout(() => usedNonces.delete(nonce), 60000);
-      }
-      const script = scriptStorage.get(id);
-      if (!script) {
-        return res.status(200).send('-- Error: Script Not Found');
-      }
-      res.set('Content-Type', 'text/plain');
-      return res.send(script);
-    } catch (err) {
-      console.error('Loader error:', err);
-      return res.status(200).send('-- Error: Internal Processing Fault');
-    }
-  });
-
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'stable', timestamp: new Date().toISOString() });
-  });
-
-  // --- VITE / STATIC SERVING ---
-
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath));
-    // SPA Fallback: Serve index.html for unknown non-API routes
-    app.get('*', (req, res) => {
-      if (req.path.startsWith('/api/')) {
-        return res.status(404).json({ error: 'Endpoint not defined' });
-      }
-      res.sendFile(path.resolve(distPath, 'index.html'));
-    });
+  // Timestamp & Nonce Validation
+  if (ts && nonce && typeof ts === 'string' && typeof nonce === 'string') {
+    const timestamp = parseInt(ts);
+    const now = Math.floor(Date.now() / 1000);
+    if (Math.abs(now - timestamp) > 10) return res.send('-- Error: Expired');
+    if (usedNonces.has(nonce)) return res.send('-- Error: Replayed');
+    usedNonces.add(nonce);
+    setTimeout(() => usedNonces.delete(nonce), 60000);
   }
 
-  // Global Error Handler
-  app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-    console.error('Global Handler Caught:', err);
-    if (req.path.startsWith('/api/')) {
-      return res.status(500).json({ error: 'An unexpected error occurred' });
-    }
-    res.status(200).send('-- Process Terminated: Fault Detected');
-  });
+  const script = scriptStorage.get(id);
+  if (!script) return res.send('-- Error: 404');
 
-  // Start Server
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`
-🚀 ShieldAPI System Online
-📍 Port: ${PORT}
-🛡️ Mode: ${process.env.NODE_ENV || 'development'}
-    `);
-  });
-}
+  res.set('Content-Type', 'text/plain');
+  res.send(script);
+});
 
-startServer();
+// --- 4️⃣ FALLBACKS ---
+app.all('*', (req, res) => {
+  res.status(404).json({ error: 'Not Found' });
+});
+
+// Global Error Handler
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error(err);
+  res.status(500).json({ status: 'internal_error' });
+});
+
+// --- 5️⃣ START ---
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`
+  🚀 API IS PURE AND RUNNING
+  📍 Port: ${PORT}
+  🛡️ User: cellofinda@gmail.com
+  `);
+});
