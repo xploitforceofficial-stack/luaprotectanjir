@@ -1,0 +1,6 @@
+{
+  "name": "ScriptServer API",
+  "description": "Production-ready Lua script hosting and loader API system.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
