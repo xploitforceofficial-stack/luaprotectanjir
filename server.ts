@@ -12,21 +12,35 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+// 🔥 FIX SIGTERM: Railway akan mengisi process.env.PORT secara otomatis.
+const PORT = process.env.PORT || 8080; 
 
 // --- IN-MEMORY STORAGE ---
 const scriptStorage = new Map<string, string>();
 const usedNonces = new Set<string>();
 
-// --- 1️⃣ CORS & OPTIONS (MUST BE FIRST) ---
+// --- 1️⃣ CORS & OPTIONS (STRICT & PRIORITIZED) ---
+const allowedOrigins = ['https://luaprotectanjir.vercel.app', 'http://localhost:3000'];
+
 app.use(cors({
-  origin: '*',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl) or matching our domains
+    if (!origin || allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
 
 app.options('*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = req.get('origin');
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   return res.sendStatus(204);
@@ -44,7 +58,7 @@ app.use(rateLimit({
 
 // User-Agent Filter (Anti-curl/Anti-postman)
 app.use((req, res, next) => {
-  // 🔥 BONUS FIX: Jangan blokir preflight!
+  // 🔥 PROTECT OPTIONS: Jangan blokir preflight
   if (req.method === 'OPTIONS') return next();
 
   const ua = req.get('User-Agent') || '';
@@ -57,7 +71,9 @@ app.use((req, res, next) => {
 
 // Request Logger
 app.use((req, res, next) => {
-  console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.path}`);
+  if (req.method !== 'OPTIONS') {
+    console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.path}`);
+  }
   next();
 });
 
@@ -70,7 +86,11 @@ app.get('/', (req, res) => {
 
 // API Health
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'stable', uptime: process.uptime() });
+  res.json({ 
+    status: 'stable', 
+    uptime: process.uptime(),
+    port: PORT 
+  });
 });
 
 // Create Script
@@ -85,6 +105,12 @@ app.post('/api/create-script', (req: Request, res: Response) => {
     const host = req.get('host');
     const protocol = req.headers['x-forwarded-proto'] || 'http';
     const loaderUrl = `${protocol}://${host}/loader?id=${id}`;
+    
+    // Explicitly set CORS for this response too
+    const origin = req.get('origin');
+    if (origin && allowedOrigins.includes(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
+    }
     
     res.json({ id, loaderUrl });
   } catch (err) {
@@ -111,7 +137,7 @@ app.get('/loader', (req: Request, res: Response) => {
   if (!script) return res.send('-- Error: 404');
 
   res.set('Content-Type', 'text/plain');
-  res.send(script);
+  return res.send(script);
 });
 
 // --- 4️⃣ FALLBACKS ---
@@ -121,15 +147,18 @@ app.all('*', (req, res) => {
 
 // Global Error Handler
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  console.error(err);
-  res.status(500).json({ status: 'internal_error' });
+  console.error('SERVER_FAULT:', err.message);
+  if (req.path.startsWith('/api/')) {
+    return res.status(500).json({ error: 'System error' });
+  }
+  res.status(200).send('-- Process Terminated: Fault Detected');
 });
 
 // --- 5️⃣ START ---
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, () => {
   console.log(`
   🚀 API IS PURE AND RUNNING
-  📍 Port: ${PORT}
-  🛡️ User: cellofinda@gmail.com
+  📍 Target Port: ${PORT}
+  🌍 Origin: https://luaprotectanjir.vercel.app
   `);
 });
