@@ -18,33 +18,22 @@ const PORT = Number(process.env.PORT) || 3000;
 const scriptStorage = new Map<string, string>();
 const usedNonces = new Set<string>();
 
-// --- 1️⃣ OPTIONS / PREFLIGHT (CRITICAL FIX) ---
-// Handle OPTIONS secara manual di paling atas untuk bypass semua middleware lain
-app.options('*', (req, res) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.sendStatus(204);
-});
-
-// --- 2️⃣ MIDDLEWARE ---
+// --- 1️⃣ CORS & OPTIONS (MUST BE FIRST) ---
 app.use(cors({
-  origin: '*', 
+  origin: '*',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-app.use(express.json());
-
-// User-Agent Filter (Anti-curl/Anti-postman)
-app.use((req, res, next) => {
-  const ua = req.get('User-Agent') || '';
-  const blocked = ['curl', 'postman', 'insomnia', 'python-requests'];
-  if (blocked.some(b => ua.toLowerCase().includes(b))) {
-    return res.status(200).send('-- ShieldAPI: Environment Restricted');
-  }
-  next();
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  return res.sendStatus(204);
 });
+
+// --- 2️⃣ PARSERS & SECURITY MIDDLEWARE ---
+app.use(express.json());
 
 // Rate Limiting (30 req/min)
 app.use(rateLimit({
@@ -52,6 +41,19 @@ app.use(rateLimit({
   max: 30,
   message: { error: 'Quota exceeded' }
 }));
+
+// User-Agent Filter (Anti-curl/Anti-postman)
+app.use((req, res, next) => {
+  // 🔥 BONUS FIX: Jangan blokir preflight!
+  if (req.method === 'OPTIONS') return next();
+
+  const ua = req.get('User-Agent') || '';
+  const blocked = ['curl', 'postman', 'insomnia', 'python-requests'];
+  if (blocked.some(b => ua.toLowerCase().includes(b))) {
+    return res.status(200).send('-- ShieldAPI: Environment Restricted');
+  }
+  next();
+});
 
 // Request Logger
 app.use((req, res, next) => {
