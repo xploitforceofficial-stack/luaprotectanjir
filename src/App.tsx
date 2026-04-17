@@ -15,18 +15,24 @@ export default function App() {
 
   const handleCreateScript = async () => {
     setLoading(true);
+    // 😈 DONT FETCH TO VERCEL (SELF) - MUST GO TO RAILWAY
+    const API_BASE = import.meta.env.VITE_API_URL || '';
+    
     try {
-      const response = await fetch('/api/create-script', {
+      const response = await fetch(`${API_BASE}/api/create-script`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: scriptCode }),
       });
+      
       const data = await response.json();
       if (data.loaderUrl) {
         setCreatedUrl(data.loaderUrl);
       }
     } catch (err) {
       console.error('Failed to create script:', err);
+      // Optional: Inform user about JSON parse error from HTML response
+      alert('Connection Error: Make sure VITE_API_URL is correctly set to your Railway URL.');
     } finally {
       setLoading(false);
     }
